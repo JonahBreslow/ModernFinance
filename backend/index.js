@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
@@ -71,6 +72,64 @@ app.post('/api/setup/new', async (req, res) => {
     setGnuCashFile(filePath);
     store = null;
     res.json({ ok: true, filePath });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Local filesystem browser (for the setup file picker) ────────────────────
+
+// GET /api/fs/home — returns the best starting directory (~/Documents if it exists, else ~)
+app.get('/api/fs/home', (_req, res) => {
+  const home = os.homedir();
+  const docs = path.join(home, 'Documents');
+  res.json({ path: existsSync(docs) ? docs : home });
+});
+
+// Helper: resolve whether a path (including symlinks) is a directory, without throwing
+function isDir(fullPath) {
+  try { return statSync(fullPath).isDirectory(); } catch { return false; }
+}
+
+// GET /api/fs/list?path=/some/dir — lists files and subdirectories
+app.get('/api/fs/list', (req, res) => {
+  try {
+    const dir = req.query.path;
+    if (!dir) return res.status(400).json({ error: 'path query param required' });
+
+    const resolved = path.resolve(String(dir));
+    if (!existsSync(resolved)) return res.status(404).json({ error: 'Path does not exist' });
+    if (!isDir(resolved)) return res.status(400).json({ error: 'Path is not a directory' });
+
+    let names;
+    try {
+      names = readdirSync(resolved);
+    } catch (err) {
+      return res.status(403).json({ error: `Cannot read folder: ${err.message}` });
+    }
+
+    const entries = [];
+    for (const name of names) {
+      if (name.startsWith('.')) continue; // skip dotfiles
+      const fullPath = path.join(resolved, name);
+      const entryIsDir = isDir(fullPath); // resolves symlinks properly
+      const isGnuCash  = name.endsWith('.gnucash');
+
+      if (!entryIsDir && !isGnuCash) continue; // only show dirs + .gnucash files
+      entries.push({ name, isDir: entryIsDir, isGnuCash });
+    }
+
+    entries.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    // Build parent path (null when already at filesystem root)
+    const parent = resolved !== path.parse(resolved).root
+      ? path.dirname(resolved)
+      : null;
+
+    res.json({ path: resolved, parent, entries });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
