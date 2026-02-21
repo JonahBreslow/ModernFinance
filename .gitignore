@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/.vite/
+
+# Environment / personal config (contains your .gnucash file path)
+.env
+
+# GnuCash data files — store these OUTSIDE the repo
+*.gnucash
+*.gnucash.*
+
+# Projections (stored next to your data file)
+*.projections.json
+
+# Legacy projections location
+projections.json
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
