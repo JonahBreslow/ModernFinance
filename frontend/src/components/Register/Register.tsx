@@ -32,6 +32,26 @@ function ReconcileIcon({ state }: { state: string }) {
   return <Circle size={13} className="text-gray-600" title="Not reconciled" />;
 }
 
+function getColumnLabels(accountType: string): {
+  left: string; right: string;
+  leftColor: string; rightColor: string;
+} {
+  switch (accountType) {
+    case 'INCOME':
+      return { left: 'Income', right: 'Charge', leftColor: 'text-emerald-400', rightColor: 'text-red-400' };
+    case 'EXPENSE':
+      return { left: 'Rebate', right: 'Expense', leftColor: 'text-emerald-400', rightColor: 'text-orange-400' };
+    case 'LIABILITY':
+    case 'CREDIT':
+    case 'PAYABLE':
+      return { left: 'Payment', right: 'Charge', leftColor: 'text-emerald-400', rightColor: 'text-red-400' };
+    case 'EQUITY':
+      return { left: 'Increase', right: 'Decrease', leftColor: 'text-emerald-400', rightColor: 'text-red-400' };
+    default:
+      return { left: 'Withdrawal', right: 'Deposit', leftColor: 'text-red-400', rightColor: 'text-emerald-400' };
+  }
+}
+
 function getTransferLabel(otherSplits: Split[], accounts: Account[]): string {
   const accountMap = new Map(accounts.map((a) => [a.id, a]));
   if (otherSplits.length === 0) return '--';
@@ -43,12 +63,14 @@ function getTransferLabel(otherSplits: Split[], accounts: Account[]): string {
 
 function EditableCell({
   value,
+  displayValue,
   onSave,
   type = 'text',
   className,
   options,
 }: {
   value: string;
+  displayValue?: string;
   onSave: (v: string) => void;
   type?: 'text' | 'date' | 'number' | 'select';
   className?: string;
@@ -72,7 +94,7 @@ function EditableCell({
         className={cn('cursor-pointer hover:bg-white/5 rounded px-1 py-0.5 block', className)}
         onDoubleClick={() => setEditing(true)}
       >
-        {value || <span className="text-gray-600 italic">—</span>}
+        {(displayValue ?? value) || <span className="text-gray-600 italic">—</span>}
       </span>
     );
   }
@@ -201,6 +223,14 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
     updateMutation.mutate({ id: txn.id, data: { ...txn, datePosted: value } });
   }
 
+  function handleUpdateTransfer(txn: Transaction, newAccountId: string) {
+    if (txn.splits.length !== 2) return;
+    const newSplits = txn.splits.map((s) =>
+      s.accountId !== account.id ? { ...s, accountId: newAccountId } : s
+    );
+    updateMutation.mutate({ id: txn.id, data: { ...txn, splits: newSplits } });
+  }
+
   function handleUpdateAmount(txn: Transaction, split: Split, rawValue: string) {
     const newAmount = parseFloat(rawValue.replace(/[$,]/g, ''));
     if (isNaN(newAmount)) return;
@@ -262,6 +292,8 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
     .filter((a) => a.type !== 'ROOT' && !a.placeholder)
     .map((a) => ({ value: a.id, label: a.name }));
 
+  const colLabels = getColumnLabels(account.type);
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -312,9 +344,9 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
               </th>
               <th className="px-3 py-2 text-left w-40">Transfer</th>
               <th className="px-3 py-2 text-right w-28">
-                <SortHeader field="amount">Debit</SortHeader>
+                <SortHeader field="amount">{colLabels.left}</SortHeader>
               </th>
-              <th className="px-3 py-2 text-right w-28">Credit</th>
+              <th className="px-3 py-2 text-right w-28">{colLabels.right}</th>
               <th className="px-3 py-2 text-right w-32">Balance</th>
               <th className="px-3 py-2 w-8"></th>
             </tr>
@@ -322,9 +354,6 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
           <tbody>
             {sortedRows.map(({ txn, split, otherSplits, runningBalance }, i) => {
               const amount = split.value;
-              const isDebit = amount < 0;
-              const isCredit = amount > 0;
-              const displayAmt = Math.abs(amount);
               const displayRunning = getAccountDisplayBalance(runningBalance, account.type);
 
               return (
@@ -356,27 +385,33 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
                     )}
                   </td>
                   <td className="px-3 py-2 text-gray-500 text-xs">
-                    {getTransferLabel(otherSplits, accounts)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {isDebit && (
+                    {otherSplits.length === 1 ? (
                       <EditableCell
-                        value={displayAmt.toFixed(2)}
-                        type="number"
-                        onSave={(v) => handleUpdateAmount(txn, split, v)}
-                        className="text-red-400 font-mono text-right"
+                        value={otherSplits[0].accountId}
+                        displayValue={accounts.find((a) => a.id === otherSplits[0].accountId)?.name}
+                        type="select"
+                        options={accountOptions}
+                        onSave={(v) => handleUpdateTransfer(txn, v)}
                       />
+                    ) : (
+                      getTransferLabel(otherSplits, accounts)
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {isCredit && (
-                      <EditableCell
-                        value={displayAmt.toFixed(2)}
-                        type="number"
-                        onSave={(v) => handleUpdateAmount(txn, split, '-' + v)}
-                        className="text-emerald-400 font-mono text-right"
-                      />
-                    )}
+                    <EditableCell
+                      value={amount <= 0 ? Math.abs(amount).toFixed(2) : ''}
+                      type="number"
+                      onSave={(v) => handleUpdateAmount(txn, split, v ? '-' + v : '0')}
+                      className={cn(colLabels.leftColor, 'font-mono text-right')}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <EditableCell
+                      value={amount > 0 ? amount.toFixed(2) : ''}
+                      type="number"
+                      onSave={(v) => handleUpdateAmount(txn, split, v || '0')}
+                      className={cn(colLabels.rightColor, 'font-mono text-right')}
+                    />
                   </td>
                   <td className={cn(
                     'px-3 py-2 text-right font-mono text-xs',

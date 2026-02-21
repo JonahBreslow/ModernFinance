@@ -140,4 +140,3 @@ export async function parseGnuCash() {
   return { accounts, transactions };
 }
 
-export { GNUCASH_FILE };

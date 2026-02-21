@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { TrendingUp, TrendingDown, Wallet, CreditCard } from 'lucide-react';
 import type { Account, AccountNode, Transaction } from '../../types';
@@ -120,8 +120,9 @@ export function Dashboard({ accounts, transactions }: DashboardProps) {
       }
       if (month !== currentMonth) {
         currentMonth = month;
+        const [y, mo] = month.split('-').map(Number);
         points.push({
-          month: new Date(month + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          month: new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
           assets: Math.round(assets),
           liabilities: Math.round(-liabs),
           netWorth: Math.round(assets + liabs),
@@ -164,7 +165,11 @@ export function Dashboard({ accounts, transactions }: DashboardProps) {
       accounts.filter((a) => a.type === 'EXPENSE').map((a) => a.id)
     );
 
+    const currentMonthKey = now.toISOString().slice(0, 7);
     const map = new Map<string, { income: number; expenses: number }>();
+
+    // Always include the current month so it appears even with no transactions yet
+    map.set(currentMonthKey, { income: 0, expenses: 0 });
 
     for (const txn of filteredTxns) {
       const month = txn.datePosted.slice(0, 7);
@@ -178,12 +183,16 @@ export function Dashboard({ accounts, transactions }: DashboardProps) {
 
     return Array.from(map.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, data]) => ({
-        month: new Date(month + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-        income: Math.round(data.income),
-        expenses: Math.round(data.expenses),
-        savings: Math.round(data.income - data.expenses),
-      }));
+      .map(([month, data]) => {
+        const [y, m] = month.split('-').map(Number);
+        return {
+          month: new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          income: Math.round(data.income),
+          expenses: Math.round(data.expenses),
+          savings: Math.round(data.income - data.expenses),
+          isCurrent: month === currentMonthKey,
+        };
+      });
   }, [filteredTxns, accounts]);
 
   // Summary stats
@@ -342,8 +351,16 @@ export function Dashboard({ accounts, transactions }: DashboardProps) {
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-                <Bar dataKey="income" name="Income" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={24} />
-                <Bar dataKey="expenses" name="Expenses" fill="#f97316" radius={[3, 3, 0, 0]} maxBarSize={24} />
+                <Bar dataKey="income" name="Income" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={24}>
+                  {monthlyData.map((entry, i) => (
+                    <Cell key={i} fill="#10b981" fillOpacity={entry.isCurrent ? 0.4 : 1} />
+                  ))}
+                </Bar>
+                <Bar dataKey="expenses" name="Expenses" fill="#f97316" radius={[3, 3, 0, 0]} maxBarSize={24}>
+                  {monthlyData.map((entry, i) => (
+                    <Cell key={i} fill="#f97316" fillOpacity={entry.isCurrent ? 0.4 : 1} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Search as SearchIcon, FileText, PanelLeft,
@@ -64,6 +64,33 @@ export default function App() {
     useAppStore();
 
   const [showNewAccount, setShowNewAccount] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = sidebarWidth;
+    e.preventDefault();
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = e.clientX - dragStartX.current;
+      const newWidth = Math.max(160, Math.min(600, dragStartWidth.current + delta));
+      setSidebarWidth(newWidth);
+    };
+    const handleMouseUp = () => { isDragging.current = false; };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Show setup screen when no file is configured
   if (statusLoading) {
@@ -157,9 +184,10 @@ export default function App() {
         {/* Sidebar */}
         <aside
           className={cn(
-            'flex flex-col bg-gray-900 border-r border-white/10 flex-shrink-0 transition-all duration-200 overflow-hidden',
-            sidebarCollapsed ? 'w-0' : 'w-[280px]'
+            'flex flex-col bg-gray-900 border-r border-white/10 flex-shrink-0 overflow-hidden',
+            sidebarCollapsed ? 'w-0 transition-all duration-200' : 'transition-none'
           )}
+          style={sidebarCollapsed ? undefined : { width: sidebarWidth }}
         >
           <div className="px-3 pt-3 pb-1 flex items-center">
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider px-2 flex-1">
@@ -179,6 +207,16 @@ export default function App() {
             <div className="flex-1" />
           )}
         </aside>
+
+        {/* Resize handle */}
+        {!sidebarCollapsed && (
+          <div
+            className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-500/70 transition-colors relative group"
+            onMouseDown={handleDragStart}
+          >
+            <div className="absolute inset-y-0 -left-1 -right-1" />
+          </div>
+        )}
 
         {/* Main content */}
         <main className="flex-1 overflow-hidden">
