@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { parseGnuCash } from './parser.js';
 import { saveTransaction, saveAccount, renameAccount, deleteAccount, invalidateCache } from './serializer.js';
-import { getGnuCashFile, setGnuCashFile, isConfigured, getProjectionsFile } from './config.js';
+import { getGnuCashFile, setGnuCashFile, isConfigured, getProjectionsFile, getBudgetFile } from './config.js';
 import { createNewGnuCashFile } from './setup.js';
 import { parseImportFile, parseCsvWithMapping } from './importer.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -302,6 +302,27 @@ app.get('/api/projections', (_req, res) => {
 app.post('/api/projections', (req, res) => {
   try {
     writeFileSync(getProjectionsFile(), JSON.stringify(req.body, null, 2), 'utf-8');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/budget - load monthly budget amounts
+app.get('/api/budget', (_req, res) => {
+  try {
+    const file = getBudgetFile();
+    if (!existsSync(file)) return res.json({ monthly: {} });
+    res.json(JSON.parse(readFileSync(file, 'utf-8')));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/budget - save monthly budget amounts
+app.post('/api/budget', (req, res) => {
+  try {
+    writeFileSync(getBudgetFile(), JSON.stringify(req.body, null, 2), 'utf-8');
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

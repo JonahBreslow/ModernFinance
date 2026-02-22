@@ -13,11 +13,13 @@ frontend/.vite/
 *.gnucash
 *.gnucash.*
 
-# Projections (stored next to your data file)
+# Projections and budget (stored next to your data file)
 *.projections.json
+*.budget.json
 
-# Legacy projections location
+# Legacy locations
 projections.json
+budget.json
 
 # macOS
 .DS_Store

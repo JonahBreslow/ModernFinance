@@ -77,3 +77,9 @@ export function getProjectionsFile() {
   // legacy fallback
   return path.resolve(__dirname, '../projections.json');
 }
+
+export function getBudgetFile() {
+  const gf = getGnuCashFile();
+  if (gf) return gf + '.budget.json';
+  return path.resolve(__dirname, '../budget.json');
+}

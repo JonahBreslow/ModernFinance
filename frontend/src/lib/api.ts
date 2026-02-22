@@ -72,6 +72,25 @@ export async function createAccount(data: {
   return res.json();
 }
 
+export interface BudgetData {
+  monthly: Record<string, number>;
+}
+
+export async function fetchBudget(): Promise<BudgetData> {
+  const res = await fetch(`${BASE}/budget`);
+  if (!res.ok) throw new Error('Failed to fetch budget');
+  return res.json();
+}
+
+export async function saveBudget(data: BudgetData): Promise<void> {
+  const res = await fetch(`${BASE}/budget`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to save budget');
+}
+
 export async function fetchProjections(): Promise<ProjectionsData> {
   const res = await fetch(`${BASE}/projections`);
   if (!res.ok) throw new Error('Failed to fetch projections');
