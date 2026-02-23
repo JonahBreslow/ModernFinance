@@ -521,6 +521,237 @@ app.post('/api/import/preview', upload.single('file'), async (req, res) => {
   }
 });
 
+// ─── AI Advisor (Ollama) ──────────────────────────────────────────────────────
+
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+
+/** Build a compact financial snapshot to inject into the system prompt */
+function buildFinancialContext(accounts, transactions, budgetData = {}) {
+  const accountMap = new Map(accounts.map((a) => [a.id, a]));
+
+  function getPath(account) {
+    const parts = [];
+    let current = account;
+    while (current && current.type !== 'ROOT') {
+      parts.unshift(current.name);
+      current = current.parentId ? accountMap.get(current.parentId) : null;
+    }
+    return parts.join(' > ');
+  }
+
+  // Account balances
+  const balances = new Map();
+  for (const txn of transactions) {
+    for (const split of txn.splits) {
+      balances.set(split.accountId, (balances.get(split.accountId) || 0) + split.value);
+    }
+  }
+
+  // Net worth components
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+  const bankLines = [];
+  const expenseTotals = new Map();  // accountId -> { path, total }
+  const incomeTotals  = new Map();  // accountId -> { path, total }
+
+  for (const a of accounts) {
+    if (a.placeholder) continue;
+    const bal = balances.get(a.id) || 0;
+    const p   = getPath(a);
+    if (a.type === 'BANK' || a.type === 'CASH') {
+      bankLines.push({ path: p, balance: bal });
+      totalAssets += bal;
+    } else if (a.type === 'ASSET') {
+      totalAssets += bal;
+    } else if (a.type === 'LIABILITY' || a.type === 'CREDIT' || a.type === 'PAYABLE') {
+      totalLiabilities += Math.abs(bal);
+    } else if (a.type === 'EXPENSE') {
+      expenseTotals.set(a.id, { path: p, total: bal });
+    } else if (a.type === 'INCOME') {
+      incomeTotals.set(a.id, { path: p, total: Math.abs(bal) });
+    }
+  }
+
+  // Last 3 full months + current month
+  const now = new Date();
+  const months = [];
+  for (let i = 3; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    months.push({ key, label: d.toLocaleString('en-US', { month: 'long', year: 'numeric' }) });
+  }
+
+  const monthlyExp = Object.fromEntries(months.map((m) => [m.key, 0]));
+  const monthlyInc = Object.fromEntries(months.map((m) => [m.key, 0]));
+  const catMonthly  = new Map(); // accountId -> { [monthKey]: number }
+
+  for (const txn of transactions) {
+    const mk = txn.datePosted.substring(0, 7);
+    if (!monthlyExp.hasOwnProperty(mk)) continue;
+    for (const split of txn.splits) {
+      const a = accountMap.get(split.accountId);
+      if (!a) continue;
+      if (a.type === 'EXPENSE') {
+        monthlyExp[mk] = (monthlyExp[mk] || 0) + split.value;
+        if (!catMonthly.has(split.accountId)) catMonthly.set(split.accountId, {});
+        const cm = catMonthly.get(split.accountId);
+        cm[mk] = (cm[mk] || 0) + split.value;
+      } else if (a.type === 'INCOME') {
+        monthlyInc[mk] = (monthlyInc[mk] || 0) + Math.abs(split.value);
+      }
+    }
+  }
+
+  const fmt = (n) => `$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // Top 15 expense categories by all-time total
+  const topExpenses = Array.from(expenseTotals.entries())
+    .map(([id, { path, total }]) => ({ id, path, total }))
+    .filter((e) => e.total > 0.01)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
+
+  const currentMonthKey = months[months.length - 1].key;
+
+  let ctx = `\n\n## User's Real Financial Data\n`;
+
+  ctx += `\n### Net Worth Snapshot\n`;
+  ctx += `- Total Assets: ${fmt(totalAssets)}\n`;
+  ctx += `- Total Liabilities: ${fmt(totalLiabilities)}\n`;
+  ctx += `- Net Worth: ${fmt(totalAssets - totalLiabilities)}\n`;
+
+  ctx += `\n### Liquid Accounts (Bank / Cash)\n`;
+  for (const acc of bankLines.sort((a, b) => b.balance - a.balance)) {
+    ctx += `- ${acc.path}: ${fmt(acc.balance)}\n`;
+  }
+
+  ctx += `\n### Monthly Cash Flow (last 4 months)\n`;
+  for (const m of months) {
+    const exp = monthlyExp[m.key] || 0;
+    const inc = monthlyInc[m.key] || 0;
+    const net = inc - exp;
+    ctx += `- ${m.label}: Income ${fmt(inc)}, Expenses ${fmt(exp)}, Net ${net >= 0 ? '+' : ''}${fmt(net)}\n`;
+  }
+
+  ctx += `\n### Top Expense Categories (All Time)\n`;
+  for (const e of topExpenses) {
+    const thisMonth = (catMonthly.get(e.id) || {})[currentMonthKey] || 0;
+    ctx += `- ${e.path}: ${fmt(e.total)} total (current month: ${fmt(thisMonth)})\n`;
+  }
+
+  if (budgetData && Object.keys(budgetData).length > 0) {
+    ctx += `\n### Monthly Budgets vs Current Month Actuals\n`;
+    for (const [accountId, budget] of Object.entries(budgetData)) {
+      if (typeof budget !== 'number' || budget < 0) continue;
+      const a = accountMap.get(accountId);
+      if (!a) continue;
+      const actual = (catMonthly.get(accountId) || {})[currentMonthKey] || 0;
+      const pctUsed = budget > 0 ? Math.round((actual / budget) * 100) : null;
+      ctx += `- ${getPath(a)}: Budget ${fmt(budget)}/mo, Spent so far this month ${fmt(actual)}${pctUsed !== null ? ` (${pctUsed}%)` : ''}\n`;
+    }
+  }
+
+  return ctx;
+}
+
+// GET /api/chat/models — list models installed in Ollama
+app.get('/api/chat/models', async (_req, res) => {
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/tags`);
+    if (!r.ok) return res.status(503).json({ error: 'Ollama not reachable', models: [] });
+    const data = await r.json();
+    const models = (data.models || []).map((m) => m.name);
+    res.json({ models });
+  } catch {
+    res.status(503).json({ error: 'Ollama not reachable', models: [] });
+  }
+});
+
+// POST /api/chat — streaming chat with financial context injected
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { messages = [], model = 'llama3.2' } = req.body;
+    if (!Array.isArray(messages)) return res.status(400).json({ error: 'messages must be an array' });
+
+    // Build financial context
+    let financialContext = '';
+    try {
+      const { accounts, transactions } = await getStore();
+      let budgetData = {};
+      const budgetFile = getBudgetFile();
+      if (existsSync(budgetFile)) {
+        budgetData = JSON.parse(readFileSync(budgetFile, 'utf8'));
+      }
+      financialContext = buildFinancialContext(accounts, transactions, budgetData);
+    } catch (e) {
+      console.warn('Could not build financial context:', e.message);
+    }
+
+    const systemPrompt = `You are a knowledgeable, friendly personal financial advisor integrated directly into the user's financial management app. You have real-time access to their actual financial data shown below.
+
+Your role:
+- Help them understand their spending patterns and trends
+- Suggest specific, actionable ways to reduce spending or improve cash flow
+- Help them set realistic budgets based on their actual history
+- Answer general personal finance questions (savings strategies, debt payoff, emergency funds, etc.)
+- Point out patterns or anomalies you notice in their data
+
+Your style:
+- Be direct and specific — reference their actual account names and numbers when relevant
+- Be encouraging but honest; don't sugarcoat overspending
+- Keep responses concise and scannable (use bullet points when listing multiple items)
+- Focus on practical improvements, not theoretical advice
+- Do NOT give investment advice or recommend specific securities or financial products${financialContext}`;
+
+    const fullMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ];
+
+    const ollamaRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: fullMessages, stream: true }),
+    });
+
+    if (!ollamaRes.ok) {
+      const errText = await ollamaRes.text();
+      return res.status(502).json({ error: `Ollama error: ${errText}` });
+    }
+
+    // Stream plain text tokens back to the client
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Cache-Control', 'no-cache');
+
+    const reader = ollamaRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // Process complete lines (NDJSON)
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete last chunk
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.message?.content) res.write(obj.message.content);
+          if (obj.done) { res.end(); return; }
+        } catch { /* ignore malformed lines */ }
+      }
+    }
+    res.end();
+  } catch (err) {
+    console.error('Chat error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+    else res.end();
+  }
+});
+
 const PORT = 3001;
 app.listen(PORT, () => {
   console.log(`GnuCash API server running on http://localhost:${PORT}`);

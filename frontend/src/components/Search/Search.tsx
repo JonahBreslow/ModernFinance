@@ -65,7 +65,8 @@ export function Search({ accounts, transactions }: SearchProps) {
     () =>
       accounts
         .filter((a) => a.type !== 'ROOT')
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
+        .sort((a, b) => a.path.localeCompare(b.path)),
     [accounts]
   );
 
@@ -103,7 +104,7 @@ export function Search({ accounts, transactions }: SearchProps) {
             >
               <option value="">All accounts</option>
               {leafAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
+                <option key={a.id} value={a.id}>{a.path}</option>
               ))}
             </select>
           </div>

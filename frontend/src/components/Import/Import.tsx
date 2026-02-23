@@ -5,7 +5,7 @@ import {
   RotateCcw, CheckSquare, Square, X, ArrowRight, Loader2, Sparkles,
 } from 'lucide-react';
 import type { Account, Transaction } from '../../types';
-import { cn, formatCurrency, formatDate, generateGuid } from '../../lib/utils';
+import { cn, formatCurrency, formatDate, generateGuid, getAccountPath } from '../../lib/utils';
 import { previewImport, createTransaction } from '../../lib/api';
 import type { ParsedRow, ImportPreviewResult, CsvColumnMapping } from '../../lib/api';
 import { buildModel, predictBatch } from '../../lib/categorizer';
@@ -82,7 +82,10 @@ function AccountSelect({
   placeholder: string;
   filter?: (a: Account) => boolean;
 }) {
-  const opts = accounts.filter(filter ?? (() => true)).sort((a, b) => a.name.localeCompare(b.name));
+  const opts = accounts
+    .filter(filter ?? (() => true))
+    .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
+    .sort((a, b) => a.path.localeCompare(b.path));
   return (
     <div>
       {label && <label className="block text-xs text-gray-500 mb-1">{label}</label>}
@@ -92,7 +95,7 @@ function AccountSelect({
         className="bg-gray-800 border border-white/10 rounded px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 w-full"
       >
         <option value="">{placeholder}</option>
-        {opts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        {opts.map((a) => <option key={a.id} value={a.id}>{a.path}</option>)}
       </select>
     </div>
   );
@@ -799,12 +802,13 @@ export function Import({ accounts, transactions }: ImportProps) {
                               {GROUP_ORDER.map((type) => {
                                 const accsOfType = categoryAccounts
                                   .filter((a) => a.type === type)
-                                  .sort((a, b) => a.name.localeCompare(b.name));
+                                  .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
+                                  .sort((a, b) => a.path.localeCompare(b.path));
                                 if (accsOfType.length === 0) return null;
                                 return (
                                   <optgroup key={type} label={GROUP_LABELS[type] ?? type}>
                                     {accsOfType.map((a) => (
-                                      <option key={a.id} value={a.id}>{a.name}</option>
+                                      <option key={a.id} value={a.id}>{a.path}</option>
                                     ))}
                                   </optgroup>
                                 );

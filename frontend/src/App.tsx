@@ -15,6 +15,7 @@ import { Reports } from './components/Reports/Reports';
 import { Projections } from './components/Projections/Projections';
 import { Recategorize } from './components/Recategorize/Recategorize';
 import { Import } from './components/Import/Import';
+import { ChatWidget } from './components/Chat/Chat';
 import { NewAccountModal } from './components/NewAccountModal/NewAccountModal';
 import { Setup } from './components/Setup/Setup';
 
@@ -254,6 +255,9 @@ export default function App() {
           onClose={() => setShowNewAccount(false)}
         />
       )}
+
+      {/* Floating AI advisor widget — available from any view */}
+      <ChatWidget />
     </div>
   );
 }

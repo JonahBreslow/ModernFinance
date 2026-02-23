@@ -5,7 +5,7 @@ import {
   ChevronDown, X, AlertCircle, CheckSquare, Square,
 } from 'lucide-react';
 import type { Account, Transaction, Split } from '../../types';
-import { cn, formatCurrency, formatDate } from '../../lib/utils';
+import { cn, formatCurrency, formatDate, getAccountPath } from '../../lib/utils';
 import { updateTransaction, fetchChangeLog } from '../../lib/api';
 import type { ChangeLogEntry } from '../../lib/api';
 
@@ -63,16 +63,17 @@ function AccountPicker({
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose, anchorRef]);
 
-  const expenseAccounts = useMemo(() =>
+  const pickerAccounts = useMemo(() =>
     accounts
-      .filter((a) => a.type === 'EXPENSE' && !a.placeholder)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .filter((a) => !SOURCE_ACCOUNT_TYPES.has(a.type) && !a.placeholder)
+      .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
+      .sort((a, b) => a.path.localeCompare(b.path)),
     [accounts]
   );
 
   const filtered = q
-    ? expenseAccounts.filter((a) => a.name.toLowerCase().includes(q.toLowerCase()))
-    : expenseAccounts;
+    ? pickerAccounts.filter((a) => a.path.toLowerCase().includes(q.toLowerCase()))
+    : pickerAccounts;
 
   return (
     <div
@@ -108,7 +109,7 @@ function AccountPicker({
                   : 'text-gray-300 hover:bg-white/5'
               )}
             >
-              {a.name}
+              {a.path}
               {a.id === currentId && <Check size={11} />}
             </button>
           ))
@@ -351,8 +352,9 @@ function LogPanel({ entries }: { entries: ChangeLogEntry[] }) {
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 
-const EXPENSE_TYPES = new Set(['EXPENSE']);
-const ASSET_TYPES   = new Set(['ASSET', 'BANK', 'CASH', 'CREDIT', 'LIABILITY', 'PAYABLE', 'RECEIVABLE']);
+// "Source" accounts represent financial institutions / equity and are not
+// themselves recategorizable — everything else is fair game.
+const SOURCE_ACCOUNT_TYPES = new Set(['BANK', 'CASH', 'CREDIT', 'EQUITY', 'ROOT']);
 
 export function Recategorize({ accounts, transactions }: RecategorizeProps) {
   const queryClient = useQueryClient();
@@ -397,11 +399,11 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
         return true;
       })
       .flatMap((txn) => {
-        const expenseSplits = txn.splits.filter((s) => {
+        const categorizableSplits = txn.splits.filter((s) => {
           const acc = accountMap.get(s.accountId);
-          return acc && EXPENSE_TYPES.has(acc.type);
+          return acc && !SOURCE_ACCOUNT_TYPES.has(acc.type) && !acc.placeholder;
         });
-        return expenseSplits
+        return categorizableSplits
           .filter((s) => {
             if (filterAccId && s.accountId !== filterAccId) return false;
             return true;
@@ -411,10 +413,12 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
       .sort((a, b) => b.txn.datePosted.localeCompare(a.txn.datePosted));
   }, [transactions, accountMap, filterFrom, filterTo, searchQ, filterAccId]);
 
-  // Expense accounts for filter dropdown
-  const expenseAccounts = useMemo(() =>
-    accounts.filter((a) => EXPENSE_TYPES.has(a.type) && !a.placeholder)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+  // All categorizable accounts for the filter dropdown
+  const filterAccounts = useMemo(() =>
+    accounts
+      .filter((a) => !SOURCE_ACCOUNT_TYPES.has(a.type) && !a.placeholder)
+      .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
+      .sort((a, b) => a.path.localeCompare(b.path)),
     [accounts]
   );
 
@@ -525,8 +529,8 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
           className="bg-gray-800 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-300 outline-none focus:border-blue-500 max-w-[180px]"
         >
           <option value="">All categories</option>
-          {expenseAccounts.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
+          {filterAccounts.map((a) => (
+            <option key={a.id} value={a.id}>{a.path}</option>
           ))}
         </select>
 

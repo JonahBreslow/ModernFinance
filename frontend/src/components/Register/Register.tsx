@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Account, Transaction, Split } from '../../types';
 import {
-  cn, formatCurrency, formatDate, generateGuid, getAccountDisplayBalance
+  cn, formatCurrency, formatDate, generateGuid, getAccountDisplayBalance, getAccountPath
 } from '../../lib/utils';
 import { createTransaction, updateTransaction, deleteTransaction } from '../../lib/api';
 
@@ -290,7 +290,8 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
 
   const accountOptions = accounts
     .filter((a) => a.type !== 'ROOT' && !a.placeholder)
-    .map((a) => ({ value: a.id, label: a.name }));
+    .map((a) => ({ value: a.id, label: getAccountPath(a.id, accounts) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   const colLabels = getColumnLabels(account.type);
 

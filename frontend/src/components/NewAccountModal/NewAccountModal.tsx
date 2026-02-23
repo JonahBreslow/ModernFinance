@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { X, Loader2, FolderPlus } from 'lucide-react';
 import type { Account, AccountType } from '../../types';
-import { cn } from '../../lib/utils';
+import { cn, getAccountPath } from '../../lib/utils';
 import { createAccount } from '../../lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +50,8 @@ export function NewAccountModal({ accounts, defaultParentId, onClose }: Props) {
   // Filter parent account candidates to non-ROOT, non-placeholder (or placeholder OK for nesting)
   const parentCandidates = accounts
     .filter((a) => a.type !== 'ROOT')
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -133,7 +134,7 @@ export function NewAccountModal({ accounts, defaultParentId, onClose }: Props) {
             >
               <option value="">— none (top-level) —</option>
               {parentCandidates.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
+                <option key={a.id} value={a.id}>{a.path}</option>
               ))}
             </select>
           </div>
