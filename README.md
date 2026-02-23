@@ -9,10 +9,11 @@ from a browser, with your data staying 100% on your machine.
 
 ## Prerequisites
 
-| Tool | Version |
-|------|---------|
-| [Node.js](https://nodejs.org/) | 18 or later |
-| npm | bundled with Node |
+| Tool | Version | Required |
+|------|---------|----------|
+| [Node.js](https://nodejs.org/) | 18 or later | Yes |
+| npm | bundled with Node | Yes |
+| [Ollama](https://ollama.com/) | any | Optional — for AI Advisor |
 
 No database, no cloud service, no account required.
 
@@ -107,6 +108,52 @@ app/
 
 ---
 
+## AI Financial Advisor (optional)
+
+A floating chat assistant is built into the app. It has read-only access to your
+real account balances, spending history, and budgets, and can answer questions
+like *"where am I overspending?"* or *"what would a realistic budget look like?"*
+
+All processing runs locally — your financial data is never sent anywhere.
+
+### Setup
+
+**1. Install Ollama**
+
+Download and install from **[ollama.com](https://ollama.com/)**.
+
+*Recommended:* `curl -fsSL https://ollama.com/install.sh | sh` 
+
+**2. Start the Ollama server**
+
+```bash
+ollama launch openclaw
+ollama serve
+```
+
+If you see `address already in use`, Ollama is already running — skip this step.
+
+**3. Pull a model**
+
+At the time of writing, the local options are 
+
+- qwen3:8b
+- glm-4.7-flash
+- minimmax-m2.5:cloud
+
+There are other cloud options as well, but these models do not remain local.
+
+**4. Open the app**
+
+Click the **✦ sparkles button** in the bottom-right corner of any screen.
+The advisor will detect Ollama automatically and show the available models in a
+dropdown. Select your model and start chatting.
+
+> **Tip:** You can also use `ollama launch openclaw` to browse and download
+> models interactively, then restart the app to pick them up.
+
+---
+
 ## Features
 
 - **Account tree** with live balances
@@ -121,6 +168,7 @@ app/
   - Per-transaction ML category suggestion
   - Duplicate detection (FITID + fuzzy date/amount/description)
 - **Search** across all transactions
+- **AI Financial Advisor** — local LLM chat with full access to your financial data
 
 ---
 
