@@ -181,6 +181,44 @@ dropdown. Select your model and start chatting.
 
 ---
 
+## Spec-driven development (Spec-Kit)
+
+This project was built using **spec-driven development** with [Spec-Kit](https://github.com/github/spec-kit), a workflow that turns natural-language feature descriptions into structured specs, technical plans, and implementation tasks before writing code.
+
+### Workflow
+
+Each feature follows a defined pipeline:
+
+1. **Specify** — Describe the feature in plain language; Spec-Kit generates a formal specification (`spec.md`) with user stories, requirements, and success criteria.
+2. **Clarify** — Resolve ambiguities through targeted questions; answers are recorded in the spec.
+3. **Plan** — Generate a technical plan (`plan.md`), research notes (`research.md`), data model (`data-model.md`), and API/UI contracts (`contracts/`).
+4. **Tasks** — Break the plan into dependency-ordered, executable tasks (`tasks.md`).
+5. **Implement** — Execute tasks phase-by-phase, with checklists and manual validation (`quickstart.md`).
+
+### Artifacts per feature
+
+Features live under `specs/NNN-feature-name/`:
+
+```
+specs/001-recategorize-multi-split/
+├── spec.md           # User stories, requirements, success criteria
+├── plan.md           # Technical approach, architecture
+├── research.md       # Design decisions and rationale
+├── data-model.md     # Entities and validation rules
+├── tasks.md          # Implementation task list
+├── quickstart.md     # Manual test steps
+├── contracts/        # API and UI contracts
+└── checklists/       # Quality and acceptance checklists
+```
+
+### Benefits
+
+- **Traceability** — Every feature links back to a spec; requirements stay testable and measurable.
+- **Incremental delivery** — User stories are prioritized (P1, P2, P3); MVP can ship after the first story.
+- **AI-friendly** — Structured artifacts give LLMs clear context for implementation and refactoring.
+
+---
+
 ## License
 
 MIT
