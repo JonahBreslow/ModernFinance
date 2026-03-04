@@ -5,6 +5,9 @@ View accounts, edit transactions, import bank statements (QFX / CSV / XLSX),
 run income statements and balance sheets, and project future cash flow — all
 from a browser, with your data staying 100% on your machine.
 
+> **Note:** This project assumes basic familiarity with [double-entry bookkeeping](https://en.wikipedia.org/wiki/Double-entry_bookkeeping), the accounting method used by GnuCash and most accounting software. If you're new to this concept, you may want to review the fundamentals before using or contributing to this project.
+
+
 ---
 
 ## Prerequisites
