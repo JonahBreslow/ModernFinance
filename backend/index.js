@@ -429,6 +429,7 @@ app.post('/api/import/preview', upload.single('file'), async (req, res) => {
 
     const { buffer, originalname } = req.file;
     const targetAccountId    = req.body.targetAccountId || null;
+    const offsetAccountId    = req.body.offsetAccountId || null;
     const mappingRaw         = req.body.mapping || null;
     const forcedHeaderRowIdx = req.body.headerRowIdx != null
       ? parseInt(req.body.headerRowIdx, 10)
@@ -452,6 +453,31 @@ app.post('/api/import/preview', upload.single('file'), async (req, res) => {
 
     // Duplicate detection
     const data = await getStore();
+
+    const TRANSFER_DATE_TOLERANCE_DAYS = 2;
+
+    // Build transfer match keys from offset-account splits (for cross-account duplicate detection)
+    // Keys: date|abs(amount); separate sets for debit vs credit (opposite sign matching)
+    const transferMatchKeysDebit  = new Set(); // offset splits with value < 0
+    const transferMatchKeysCredit = new Set(); // offset splits with value > 0
+    const offsetAccountValid = offsetAccountId && data.accounts.some((a) => a.id === offsetAccountId);
+    if (offsetAccountValid) {
+      function addTransferKeys(set, dateStr, amount) {
+        const absAmt = Math.abs(amount).toFixed(2);
+        const d = new Date(dateStr + 'T12:00:00Z');
+        for (let offset = -TRANSFER_DATE_TOLERANCE_DAYS; offset <= TRANSFER_DATE_TOLERANCE_DAYS; offset++) {
+          const dd = new Date(d.getTime() + offset * 86_400_000);
+          set.add(`${dd.toISOString().slice(0, 10)}|${absAmt}`);
+        }
+      }
+      for (const txn of data.transactions) {
+        for (const split of txn.splits) {
+          if (split.accountId !== offsetAccountId) continue;
+          if (split.value < 0) addTransferKeys(transferMatchKeysDebit, txn.datePosted, split.value);
+          else if (split.value > 0) addTransferKeys(transferMatchKeysCredit, txn.datePosted, split.value);
+        }
+      }
+    }
 
     // Normalise an online ID / FITID so type differences and trailing ".000000"
     // suffixes (Chase, Wells Fargo QFX format) don't prevent matching.
@@ -504,6 +530,22 @@ app.post('/api/import/preview', upload.single('file'), async (req, res) => {
         const key = fuzzyKey(row.date, row.amount, row.description);
         if (knownFuzzyKeys.has(key)) isDuplicate = true;
       }
+
+      // Transfer match — cross-account: import credit ↔ offset debit, import debit ↔ offset credit
+      if (!isDuplicate && offsetAccountValid && row.amount !== 0) {
+        const absAmt = Math.abs(row.amount).toFixed(2);
+        const d = new Date(row.date + 'T12:00:00Z');
+        const transferSet = row.amount > 0 ? transferMatchKeysDebit : transferMatchKeysCredit;
+        for (let offset = -TRANSFER_DATE_TOLERANCE_DAYS; offset <= TRANSFER_DATE_TOLERANCE_DAYS; offset++) {
+          const dd = new Date(d.getTime() + offset * 86_400_000);
+          const checkKey = `${dd.toISOString().slice(0, 10)}|${absAmt}`;
+          if (transferSet.has(checkKey)) {
+            isDuplicate = true;
+            break;
+          }
+        }
+      }
+
       return { ...row, isDuplicate };
     });
 
