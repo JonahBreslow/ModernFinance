@@ -24,8 +24,8 @@ No database, no cloud service, no account required.
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/gnucash-web.git
-cd gnucash-web
+git clone https://github.com/JonahBreslow/ModernFinance.git
+cd ModernFinance
 ```
 
 ### 2. Install dependencies
