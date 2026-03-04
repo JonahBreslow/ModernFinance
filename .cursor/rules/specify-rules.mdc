@@ -1,0 +1,37 @@
+---
+description: Project Development Guidelines
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# ModernFinance Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-03-03
+
+## Active Technologies
+- GnuCash `.gnucash` XML (unchanged) (002-split-modal-debit-credit)
+
+- TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express, GnuCash XML serializer (001-recategorize-multi-split)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+npm test && npm run lint
+
+## Code Style
+
+TypeScript 5.x (frontend), Node.js (backend): Follow standard conventions
+
+## Recent Changes
+- 002-split-modal-debit-credit: Added TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express
+
+- 001-recategorize-multi-split: Added TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express, GnuCash XML serializer
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->

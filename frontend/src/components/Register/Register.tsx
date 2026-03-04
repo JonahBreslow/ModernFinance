@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Check, ArrowUpDown, ChevronUp, ChevronDown,
-  CheckCircle, Circle, Clock
+  CheckCircle, Circle, Clock, Layers, ChevronRight
 } from 'lucide-react';
 import type { Account, Transaction, Split } from '../../types';
 import {
@@ -50,6 +50,66 @@ function getColumnLabels(accountType: string): {
     default:
       return { left: 'Withdrawal', right: 'Deposit', leftColor: 'text-red-400', rightColor: 'text-emerald-400' };
   }
+}
+
+function TransactionContextMenu({
+  x, y, txn, otherSplits, isExpanded,
+  onToggleExpand, onClose,
+}: {
+  x: number; y: number;
+  txn: Transaction;
+  otherSplits: Split[];
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x, y });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const { width, height } = ref.current.getBoundingClientRect();
+    setPos({
+      x: Math.min(x, window.innerWidth  - width  - 8),
+      y: Math.min(y, window.innerHeight - height - 8),
+    });
+  }, [x, y]);
+
+  const isSplit = otherSplits.length > 1;
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        onClick={onClose}
+        onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+      />
+      <div
+        ref={ref}
+        className="fixed z-50 min-w-[220px] bg-gray-800 border border-white/10 rounded-lg shadow-2xl py-1 text-sm overflow-hidden"
+        style={{ left: pos.x, top: pos.y }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-3 py-1.5 text-xs text-gray-500 font-medium border-b border-white/5 truncate max-w-[240px]">
+          {txn.description || 'Transaction'}
+        </div>
+        <button
+          disabled={!isSplit}
+          onClick={() => { onToggleExpand(); onClose(); }}
+          className={cn(
+            'w-full flex items-center gap-2.5 px-3 py-2 transition-colors text-left',
+            isSplit
+              ? 'text-gray-300 hover:bg-white/5 hover:text-white'
+              : 'text-gray-600 cursor-not-allowed'
+          )}
+        >
+          <Layers size={13} className={isSplit ? 'text-blue-400' : 'text-gray-600'} />
+          {isExpanded ? 'Collapse splits' : 'Expand splits'}
+          {!isSplit && <span className="ml-auto text-xs text-gray-600">Not a split</span>}
+        </button>
+      </div>
+    </>
+  );
 }
 
 function getTransferLabel(otherSplits: Split[], accounts: Account[]): string {
@@ -139,6 +199,16 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [filter, setFilter] = useState('');
+  const [expandedTxns, setExpandedTxns] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ txnId: string; x: number; y: number } | null>(null);
+
+  function toggleExpand(txnId: string) {
+    setExpandedTxns((prev) => {
+      const next = new Set(prev);
+      if (next.has(txnId)) next.delete(txnId); else next.add(txnId);
+      return next;
+    });
+  }
 
   const accountTxns = useMemo(() => {
     return transactions.filter((t) =>
@@ -356,14 +426,21 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
             {sortedRows.map(({ txn, split, otherSplits, runningBalance }, i) => {
               const amount = split.value;
               const displayRunning = getAccountDisplayBalance(runningBalance, account.type);
+              const isExpanded = expandedTxns.has(txn.id);
+              const isSplitTxn = otherSplits.length > 1;
 
               return (
+                <>
                 <tr
                   key={txn.id}
                   className={cn(
                     'border-b border-white/5 hover:bg-white/3 group',
                     i % 2 === 0 ? 'bg-transparent' : 'bg-white/[0.02]'
                   )}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ txnId: txn.id, x: e.clientX, y: e.clientY });
+                  }}
                 >
                   <td className="px-3 py-2 text-center">
                     <ReconcileIcon state={split.reconciledState} />
@@ -421,14 +498,54 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
                     {formatCurrency(displayRunning)}
                   </td>
                   <td className="px-3 py-2">
-                    <button
-                      onClick={() => deleteMutation.mutate(txn.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-600 hover:text-red-400"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {isSplitTxn && (
+                        <button
+                          onClick={() => toggleExpand(txn.id)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-600 hover:text-blue-400"
+                          title={isExpanded ? 'Collapse splits' : 'Expand splits'}
+                        >
+                          <ChevronRight
+                            size={13}
+                            className={cn('transition-transform', isExpanded && 'rotate-90')}
+                          />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteMutation.mutate(txn.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-600 hover:text-red-400"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
+                {isExpanded && otherSplits.map((s) => {
+                  const accName = accounts.find((a) => a.id === s.accountId)?.name ?? '?';
+                  const sAmt = s.value;
+                  return (
+                    <tr key={s.id} className="bg-blue-950/20 border-b border-blue-900/20">
+                      <td className="px-3 py-1.5" />
+                      <td className="px-3 py-1.5" />
+                      <td className="px-3 py-1.5 text-xs text-gray-500 pl-8">
+                        <span className="flex items-center gap-1.5">
+                          <Layers size={11} className="text-blue-500/70 flex-shrink-0" />
+                          {s.memo || <span className="italic text-gray-600">no memo</span>}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-blue-400/80">{accName}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-400">
+                        {sAmt < 0 ? formatCurrency(Math.abs(sAmt)) : ''}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-400">
+                        {sAmt > 0 ? formatCurrency(sAmt) : ''}
+                      </td>
+                      <td className="px-3 py-1.5" />
+                      <td className="px-3 py-1.5" />
+                    </tr>
+                  );
+                })}
+                </>
               );
             })}
           </tbody>
@@ -439,6 +556,22 @@ export function Register({ account, accounts, transactions }: RegisterProps) {
           </div>
         )}
       </div>
+
+      {contextMenu && (() => {
+        const row = sortedRows.find((r) => r.txn.id === contextMenu.txnId);
+        if (!row) return null;
+        return (
+          <TransactionContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            txn={row.txn}
+            otherSplits={row.otherSplits}
+            isExpanded={expandedTxns.has(row.txn.id)}
+            onToggleExpand={() => toggleExpand(row.txn.id)}
+            onClose={() => setContextMenu(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
