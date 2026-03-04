@@ -141,7 +141,7 @@ export default function App() {
 
         <div className="flex items-center gap-2">
           <BookOpen size={18} className="text-blue-400" />
-          <span className="font-semibold text-gray-200 text-sm">GnuCash</span>
+          <span className="font-semibold text-gray-200 text-sm">ModernFinance</span>
         </div>
 
         <div className="h-4 w-px bg-white/10" />
