@@ -376,7 +376,8 @@ export function Import({ accounts, transactions }: ImportProps) {
     setLoading(true);
     try {
       const hIdx = overrideHeaderRowIdx ?? headerRowIdx ?? undefined;
-      const result = await previewImport(f, targetAccId || undefined, undefined, hIdx);
+      const offsetId = imbalanceAccId || autoOffsetAccId || undefined;
+      const result = await previewImport(f, targetAccId || undefined, undefined, hIdx, offsetId);
       if (result.headerRowIdx != null) setHeaderRowIdx(result.headerRowIdx);
       setPreview(result);
       if (result.needsMapping) {
@@ -393,7 +394,7 @@ export function Import({ accounts, transactions }: ImportProps) {
     } finally {
       setLoading(false);
     }
-  }, [targetAccId]);
+  }, [targetAccId, imbalanceAccId, autoOffsetAccId]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -414,7 +415,8 @@ export function Import({ accounts, transactions }: ImportProps) {
     setLoading(true);
     setError(null);
     try {
-      const result = await previewImport(file, targetAccId || undefined, mapping);
+      const offsetId = imbalanceAccId || autoOffsetAccId || undefined;
+      const result = await previewImport(file, targetAccId || undefined, mapping, undefined, offsetId);
       setPreview(result);
       const sel = new Set<number>();
       result.rows.forEach((r, i) => { if (!r.isDuplicate) sel.add(i); });

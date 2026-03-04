@@ -139,11 +139,13 @@ export async function previewImport(
   file: File,
   targetAccountId?: string,
   mapping?: CsvColumnMapping,
-  headerRowIdx?: number
+  headerRowIdx?: number,
+  offsetAccountId?: string
 ): Promise<ImportPreviewResult> {
   const form = new FormData();
   form.append('file', file);
   if (targetAccountId) form.append('targetAccountId', targetAccountId);
+  if (offsetAccountId) form.append('offsetAccountId', offsetAccountId);
   if (mapping) form.append('mapping', JSON.stringify(mapping));
   if (headerRowIdx != null) form.append('headerRowIdx', String(headerRowIdx));
 
