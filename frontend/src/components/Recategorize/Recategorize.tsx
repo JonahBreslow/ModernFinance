@@ -2,8 +2,9 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, ArrowRight, Check, RotateCcw, Save, History,
-  ChevronDown, X, AlertCircle, CheckSquare, Square,
+  ChevronDown, X, AlertCircle, CheckSquare, Square, Layers,
 } from 'lucide-react';
+import { SplitModal } from './SplitModal';
 import type { Account, Transaction, Split } from '../../types';
 import { cn, formatCurrency, formatDate, getAccountPath } from '../../lib/utils';
 import { updateTransaction, fetchChangeLog } from '../../lib/api';
@@ -26,6 +27,12 @@ interface StagedChange {
   fromAccountName: string;
   toAccountId: string;
   toAccountName: string;
+}
+
+/** Pending multi-split edit for a transaction (replaces one or more categorizable splits) */
+interface StagedSplitChange {
+  txn: Transaction;
+  newCategorizableSplits: Split[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -227,29 +234,33 @@ function BulkBar({
 
 function PendingBar({
   changes,
+  splitChanges,
   onSave,
   onUndo,
+  onUndoSplit,
   saving,
 }: {
   changes: StagedChange[];
+  splitChanges: StagedSplitChange[];
   onSave: () => void;
   onUndo: (txnId: string, splitId: string) => void;
+  onUndoSplit: (txnId: string) => void;
   saving: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const totalCount = changes.length + splitChanges.length;
 
-  if (changes.length === 0) return null;
+  if (totalCount === 0) return null;
 
   return (
     <div className="border-t border-amber-500/30 bg-amber-500/10 flex-shrink-0">
-      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2">
         <AlertCircle size={14} className="text-amber-400 flex-shrink-0" />
         <button
           className="flex-1 text-left text-sm text-amber-300 font-medium flex items-center gap-1"
           onClick={() => setExpanded((e) => !e)}
         >
-          {changes.length} unsaved change{changes.length !== 1 ? 's' : ''}
+          {totalCount} unsaved change{totalCount !== 1 ? 's' : ''}
           <ChevronDown size={12} className={cn('transition-transform', expanded && 'rotate-180')} />
         </button>
         <button
@@ -258,10 +269,13 @@ function PendingBar({
           className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-gray-950 text-xs font-semibold rounded-lg transition-colors"
         >
           <Save size={12} />
-          {saving ? 'Saving…' : `Save ${changes.length} change${changes.length !== 1 ? 's' : ''}`}
+          {saving ? 'Saving…' : `Save ${totalCount} change${totalCount !== 1 ? 's' : ''}`}
         </button>
         <button
-          onClick={() => changes.forEach((c) => onUndo(c.txn.id, c.splitId))}
+          onClick={() => {
+            changes.forEach((c) => onUndo(c.txn.id, c.splitId));
+            splitChanges.forEach((c) => onUndoSplit(c.txn.id));
+          }}
           className="text-xs text-amber-500 hover:text-amber-300 flex items-center gap-1"
           title="Undo all"
         >
@@ -269,7 +283,6 @@ function PendingBar({
         </button>
       </div>
 
-      {/* Expanded detail */}
       {expanded && (
         <div className="border-t border-amber-500/20 max-h-40 overflow-auto">
           {changes.map((c) => (
@@ -280,11 +293,20 @@ function PendingBar({
               <span className="text-amber-400 flex-shrink-0">{c.fromAccountName}</span>
               <ArrowRight size={10} className="text-gray-600 flex-shrink-0" />
               <span className="text-emerald-400 flex-shrink-0">{c.toAccountName}</span>
-              <button
-                onClick={() => onUndo(c.txn.id, c.splitId)}
-                className="text-gray-600 hover:text-red-400 ml-1 flex-shrink-0"
-                title="Undo this change"
-              >
+              <button onClick={() => onUndo(c.txn.id, c.splitId)} className="text-gray-600 hover:text-red-400 ml-1 flex-shrink-0" title="Undo">
+                <RotateCcw size={11} />
+              </button>
+            </div>
+          ))}
+          {splitChanges.map((c) => (
+            <div key={`split-${c.txn.id}`}
+              className="flex items-center gap-3 px-4 py-1.5 text-xs border-b border-amber-500/10 last:border-0">
+              <span className="text-gray-400 font-mono w-20 flex-shrink-0">{formatDate(c.txn.datePosted)}</span>
+              <span className="flex-1 truncate text-gray-300">{c.txn.description || '—'}</span>
+              <span className="text-blue-400 flex-shrink-0">
+                Split: {formatCurrency(Math.abs(c.newCategorizableSplits.reduce((s, sp) => s + sp.value, 0)))} → {c.newCategorizableSplits.length} categories
+              </span>
+              <button onClick={() => onUndoSplit(c.txn.id)} className="text-gray-600 hover:text-red-400 ml-1 flex-shrink-0" title="Undo">
                 <RotateCcw size={11} />
               </button>
             </div>
@@ -356,6 +378,33 @@ function LogPanel({ entries }: { entries: ChangeLogEntry[] }) {
 // themselves recategorizable — everything else is fair game.
 const SOURCE_ACCOUNT_TYPES = new Set(['BANK', 'CASH', 'CREDIT', 'EQUITY', 'ROOT']);
 
+function getCategorizableSplits(txn: Transaction, accountMap: Map<string, Account>): Split[] {
+  return txn.splits.filter((s) => {
+    const acc = accountMap.get(s.accountId);
+    return acc && !SOURCE_ACCOUNT_TYPES.has(acc.type) && !acc.placeholder;
+  });
+}
+
+function getOriginalCategorizableTotal(txn: Transaction, accountMap: Map<string, Account>): number {
+  return getCategorizableSplits(txn, accountMap).reduce((sum, s) => sum + s.value, 0);
+}
+
+function getSourceSplits(txn: Transaction, accountMap: Map<string, Account>): Split[] {
+  return txn.splits.filter((s) => {
+    const acc = accountMap.get(s.accountId);
+    return acc && SOURCE_ACCOUNT_TYPES.has(acc.type);
+  });
+}
+
+function mergeSplits(
+  txn: Transaction,
+  newCategorizableSplits: Split[],
+  accountMap: Map<string, Account>
+): Split[] {
+  const sourceSplits = getSourceSplits(txn, accountMap);
+  return [...sourceSplits, ...newCategorizableSplits];
+}
+
 export function Recategorize({ accounts, transactions }: RecategorizeProps) {
   const queryClient = useQueryClient();
 
@@ -371,6 +420,9 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
 
   // Staged changes: txnId|splitId → StagedChange
   const [staged, setStaged] = useState<Map<string, StagedChange>>(new Map());
+  // Staged split changes: txnId → StagedSplitChange (mutually exclusive with staged for same txn)
+  const [stagedSplits, setStagedSplits] = useState<Map<string, StagedSplitChange>>(new Map());
+  const [splitModalTxn, setSplitModalTxn] = useState<Transaction | null>(null);
   const [saving, setSaving] = useState(false);
 
   const accountMap = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
@@ -425,6 +477,9 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
   function rowKey(txnId: string, splitId: string) { return `${txnId}|${splitId}`; }
 
   function stageChange(txn: Transaction, split: Split, toAccount: Account) {
+    if (stagedSplits.has(txn.id)) {
+      setStagedSplits((prev) => { const m = new Map(prev); m.delete(txn.id); return m; });
+    }
     const fromAccount = accountMap.get(split.accountId);
     if (!fromAccount || fromAccount.id === toAccount.id) return;
     const key = rowKey(txn.id, split.id);
@@ -465,6 +520,11 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
   }
 
   const stagedList = Array.from(staged.values());
+  const stagedSplitList = Array.from(stagedSplits.values());
+  const categorizableAccounts = useMemo(() =>
+    accounts.filter((a) => !SOURCE_ACCOUNT_TYPES.has(a.type) && !a.placeholder),
+    [accounts]
+  );
 
   async function saveChanges() {
     setSaving(true);
@@ -475,15 +535,35 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
         );
         await updateTransaction(change.txn.id, { ...change.txn, splits: newSplits });
       }
-      // Invalidate both the main data and the change log (re-read from .log files)
+      for (const change of stagedSplitList) {
+        const merged = mergeSplits(change.txn, change.newCategorizableSplits, accountMap);
+        await updateTransaction(change.txn.id, { ...change.txn, splits: merged });
+      }
       queryClient.invalidateQueries({ queryKey: ['gnucash'] });
       queryClient.invalidateQueries({ queryKey: ['change-log'] });
       setStaged(new Map());
+      setStagedSplits(new Map());
     } catch (err) {
       console.error('Save failed:', err);
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSplitSave(txn: Transaction, newSplits: Split[]) {
+    setStagedSplits((prev) => new Map(prev).set(txn.id, { txn, newCategorizableSplits: newSplits }));
+    setStaged((prev) => {
+      const m = new Map(prev);
+      for (const [k, c] of m) {
+        if (c.txn.id === txn.id) m.delete(k);
+      }
+      return m;
+    });
+    setSplitModalTxn(null);
+  }
+
+  function undoSplitChange(txnId: string) {
+    setStagedSplits((prev) => { const m = new Map(prev); m.delete(txnId); return m; });
   }
 
   function toggleSelect(key: string) {
@@ -594,7 +674,7 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
                   <th className="px-3 py-2 text-left">Description</th>
                   <th className="px-3 py-2 text-right w-28">Amount</th>
                   <th className="px-3 py-2 text-left w-52">Category</th>
-                  <th className="px-3 py-2 w-8"></th>
+                  <th className="px-3 py-2 w-20"></th>
                 </tr>
               </thead>
               <tbody>
@@ -637,29 +717,57 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          {isChanged && (
-                            <span className="text-xs text-gray-600 line-through whitespace-nowrap max-w-[80px] truncate">
-                              {currentAcc?.name}
+                          {stagedSplits.has(txn.id) ? (
+                            <span className="text-xs text-blue-400">
+                              Split: {stagedSplits.get(txn.id)!.newCategorizableSplits.length} categories
                             </span>
+                          ) : (
+                            <>
+                              {isChanged && (
+                                <span className="text-xs text-gray-600 line-through whitespace-nowrap max-w-[80px] truncate">
+                                  {currentAcc?.name}
+                                </span>
+                              )}
+                              <CategoryCell
+                                currentAccount={currentAcc}
+                                pendingAccount={isChanged ? pendingAcc : undefined}
+                                accounts={accounts}
+                                onSelect={(acc) => stageChange(txn, split, acc)}
+                              />
+                            </>
                           )}
-                          <CategoryCell
-                            currentAccount={currentAcc}
-                            pendingAccount={isChanged ? pendingAcc : undefined}
-                            accounts={accounts}
-                            onSelect={(acc) => stageChange(txn, split, acc)}
-                          />
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        {isChanged && (
-                          <button
-                            onClick={() => undoChange(txn.id, split.id)}
-                            className="text-gray-600 hover:text-amber-400 transition-colors"
-                            title="Undo"
-                          >
-                            <RotateCcw size={13} />
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {getCategorizableSplits(txn, accountMap).length >= 1 && (
+                            <button
+                              onClick={() => setSplitModalTxn(txn)}
+                              className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-blue-400 transition-all"
+                              title="Split"
+                            >
+                              <Layers size={13} />
+                            </button>
+                          )}
+                          {isChanged && (
+                            <button
+                              onClick={() => undoChange(txn.id, split.id)}
+                              className="text-gray-600 hover:text-amber-400 transition-colors"
+                              title="Undo"
+                            >
+                              <RotateCcw size={13} />
+                            </button>
+                          )}
+                          {stagedSplits.has(txn.id) && (
+                            <button
+                              onClick={() => undoSplitChange(txn.id)}
+                              className="text-gray-600 hover:text-amber-400 transition-colors"
+                              title="Undo split"
+                            >
+                              <RotateCcw size={13} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -677,8 +785,10 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
           {/* Pending changes bar */}
           <PendingBar
             changes={stagedList}
+            splitChanges={stagedSplitList}
             onSave={saveChanges}
             onUndo={undoChange}
+            onUndoSplit={undoSplitChange}
             saving={saving}
           />
         </div>
@@ -697,6 +807,16 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
           </div>
         )}
       </div>
+
+      {splitModalTxn && (
+        <SplitModal
+          transaction={splitModalTxn}
+          accounts={accounts}
+          categorizableAccounts={categorizableAccounts}
+          onSave={(newSplits) => handleSplitSave(splitModalTxn, newSplits)}
+          onCancel={() => setSplitModalTxn(null)}
+        />
+      )}
     </div>
   );
 }
