@@ -12,6 +12,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-03
 - GnuCash `.gnucash` XML (unchanged) (002-split-modal-debit-credit)
 - TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express, GnuCash XML store (003-import-duplicate-detection)
 - GnuCash `.gnucash` XML file (gzipped), local filesystem (003-import-duplicate-detection)
+- TypeScript 5.x (frontend), Node.js (backend) + React 19, Vite 7, Express 4 — no new dependencies for this change (001-all-categories-dropdown)
+- GnuCash XML files (`.gnucash`) read/written via existing parser and serializer (001-all-categories-dropdown)
 
 - TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express, GnuCash XML serializer (001-recategorize-multi-split)
 
@@ -31,10 +33,10 @@ npm test && npm run lint
 TypeScript 5.x (frontend), Node.js (backend): Follow standard conventions
 
 ## Recent Changes
+- 001-all-categories-dropdown: Added TypeScript 5.x (frontend), Node.js (backend) + React 19, Vite 7, Express 4 — no new dependencies for this change
 - 003-import-duplicate-detection: Added TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express, GnuCash XML store
 - 002-split-modal-debit-credit: Added TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express
 
-- 001-recategorize-multi-split: Added TypeScript 5.x (frontend), Node.js (backend) + React, Vite, Express, GnuCash XML serializer
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

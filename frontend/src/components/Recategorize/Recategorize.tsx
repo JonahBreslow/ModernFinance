@@ -72,7 +72,7 @@ function AccountPicker({
 
   const pickerAccounts = useMemo(() =>
     accounts
-      .filter((a) => !SOURCE_ACCOUNT_TYPES.has(a.type) && !a.placeholder)
+      .filter((a) => a.type !== 'ROOT' && !a.placeholder)
       .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
       .sort((a, b) => a.path.localeCompare(b.path)),
     [accounts]
@@ -374,14 +374,15 @@ function LogPanel({ entries }: { entries: ChangeLogEntry[] }) {
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 
-// "Source" accounts represent financial institutions / equity and are not
-// themselves recategorizable — everything else is fair game.
-const SOURCE_ACCOUNT_TYPES = new Set(['BANK', 'CASH', 'CREDIT', 'EQUITY', 'ROOT']);
+// "Source" accounts are the funding side of a transaction (e.g. your checking account
+// debit). Their splits are not surfaced as actionable rows. EQUITY accounts such as
+// Imbalance-USD are intentionally excluded from this set so they appear as rows.
+const ROW_SOURCE_TYPES = new Set(['BANK', 'CASH', 'CREDIT', 'ROOT']);
 
 function getCategorizableSplits(txn: Transaction, accountMap: Map<string, Account>): Split[] {
   return txn.splits.filter((s) => {
     const acc = accountMap.get(s.accountId);
-    return acc && !SOURCE_ACCOUNT_TYPES.has(acc.type) && !acc.placeholder;
+    return acc && !ROW_SOURCE_TYPES.has(acc.type) && !acc.placeholder;
   });
 }
 
@@ -392,7 +393,7 @@ function getOriginalCategorizableTotal(txn: Transaction, accountMap: Map<string,
 function getSourceSplits(txn: Transaction, accountMap: Map<string, Account>): Split[] {
   return txn.splits.filter((s) => {
     const acc = accountMap.get(s.accountId);
-    return acc && SOURCE_ACCOUNT_TYPES.has(acc.type);
+    return acc && ROW_SOURCE_TYPES.has(acc.type);
   });
 }
 
@@ -453,7 +454,7 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
       .flatMap((txn) => {
         const categorizableSplits = txn.splits.filter((s) => {
           const acc = accountMap.get(s.accountId);
-          return acc && !SOURCE_ACCOUNT_TYPES.has(acc.type) && !acc.placeholder;
+          return acc && !ROW_SOURCE_TYPES.has(acc.type) && !acc.placeholder;
         });
         return categorizableSplits
           .filter((s) => {
@@ -465,10 +466,10 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
       .sort((a, b) => b.txn.datePosted.localeCompare(a.txn.datePosted));
   }, [transactions, accountMap, filterFrom, filterTo, searchQ, filterAccId]);
 
-  // All categorizable accounts for the filter dropdown
+  // All accounts available in the filter dropdown — every real (non-ROOT, non-placeholder) account
   const filterAccounts = useMemo(() =>
     accounts
-      .filter((a) => !SOURCE_ACCOUNT_TYPES.has(a.type) && !a.placeholder)
+      .filter((a) => a.type !== 'ROOT' && !a.placeholder)
       .map((a) => ({ ...a, path: getAccountPath(a.id, accounts) }))
       .sort((a, b) => a.path.localeCompare(b.path)),
     [accounts]
@@ -522,7 +523,7 @@ export function Recategorize({ accounts, transactions }: RecategorizeProps) {
   const stagedList = Array.from(staged.values());
   const stagedSplitList = Array.from(stagedSplits.values());
   const categorizableAccounts = useMemo(() =>
-    accounts.filter((a) => !SOURCE_ACCOUNT_TYPES.has(a.type) && !a.placeholder),
+    accounts.filter((a) => a.type !== 'ROOT' && !a.placeholder),
     [accounts]
   );
 
